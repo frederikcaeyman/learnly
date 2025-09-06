@@ -1,5 +1,7 @@
 import { useState, useRef } from "react";
 
+const API_BASE_URL = "http://localhost:5000/api";
+
 export default function App() {
   const [text, setText] = useState("");
   const [cards, setCards] = useState([]);
@@ -8,7 +10,31 @@ export default function App() {
   const [examQuestions, setExamQuestions] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState("input");
+  const [error, setError] = useState("");
   const fileInputRef = useRef(null);
+
+  // Helper function for API calls
+  const apiCall = async (endpoint, options = {}) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+        ...options,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('API call failed:', error);
+      throw error;
+    }
+  };
 
   // PDF upload handler
   const handleFileUpload = async (event) => {
@@ -16,132 +42,139 @@ export default function App() {
     if (!file) return;
 
     if (file.type !== "application/pdf") {
-      alert("Gelieve alleen PDF bestanden te uploaden.");
+      setError("Gelieve alleen PDF bestanden te uploaden.");
       return;
     }
 
     setIsProcessing(true);
-    
-    // Simulatie van PDF verwerking (hier zou je een echte PDF parser gebruiken)
-    setTimeout(() => {
-      const demoText = `
-      Hoofdstuk 1: Inleiding tot Machine Learning
-      
-      Machine Learning is een deelgebied van kunstmatige intelligentie dat zich richt op het ontwikkelen van algoritmen die kunnen leren van data zonder expliciet geprogrammeerd te worden voor specifieke taken.
-      
-      Belangrijke concepten:
-      - Supervised Learning: Leren met gelabelde voorbeelden
-      - Unsupervised Learning: Patronen vinden in ongelabelde data  
-      - Reinforcement Learning: Leren door interactie met omgeving
-      
-      Toepassingen omvatten beeldherkenning, natuurlijke taalverwerking, en voorspellende analyses.
-      `;
-      setText(demoText);
-      setIsProcessing(false);
+    setError("");
+
+    try {
+      const formData = new FormData();
+      formData.append('pdf', file);
+
+      const response = await fetch(`${API_BASE_URL}/upload-pdf`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'PDF upload failed');
+      }
+
+      const result = await response.json();
+      setText(result.text);
       setActiveTab("input");
-    }, 2000);
+      
+      // Clear previous results
+      setCards([]);
+      setQuiz([]);
+      setSummary("");
+      setExamQuestions([]);
+      
+    } catch (error) {
+      console.error('PDF upload failed:', error);
+      setError(`PDF upload gefaald: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  const generateFlashcards = () => {
+  const generateFlashcards = async () => {
+    if (!text.trim()) {
+      setError("Voeg eerst tekst toe om flashcards te genereren.");
+      return;
+    }
+
     setIsProcessing(true);
-    setTimeout(() => {
-      const lines = text.split(/\n+/).filter(Boolean);
-      const newCards = [
-        { q: "Wat is Machine Learning?", a: "Een deelgebied van AI dat algoritmen ontwikkelt die kunnen leren van data zonder expliciet geprogrammeerd te worden." },
-        { q: "Wat is Supervised Learning?", a: "Een type machine learning waarbij gelabelde voorbeelden gebruikt worden om het model te trainen." },
-        { q: "Noem drie hoofdtypes van Machine Learning", a: "Supervised Learning, Unsupervised Learning, en Reinforcement Learning." },
-        { q: "Wat zijn typische toepassingen van ML?", a: "Beeldherkenning, natuurlijke taalverwerking, en voorspellende analyses." },
-        { q: "Wat is Unsupervised Learning?", a: "Het vinden van patronen in ongelabelde data zonder vooraf gedefinieerde doelvariabelen." },
-        { q: "Wat is Reinforcement Learning?", a: "Leren door interactie met de omgeving en het ontvangen van beloningen of straffen." }
-      ];
-      setCards(newCards);
-      setIsProcessing(false);
+    setError("");
+
+    try {
+      const result = await apiCall('/generate-flashcards', {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      });
+
+      setCards(result.flashcards);
       setActiveTab("flashcards");
-    }, 1500);
+    } catch (error) {
+      setError(`Flashcard generatie gefaald: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  const generateQuiz = () => {
+  const generateQuiz = async () => {
+    if (!text.trim()) {
+      setError("Voeg eerst tekst toe om een quiz te genereren.");
+      return;
+    }
+
     setIsProcessing(true);
-    setTimeout(() => {
-      const newQuiz = [
-        { 
-          q: "Wat is de hoofddoelstelling van Machine Learning?", 
-          opts: ["Data opslaan", "Algoritmen laten leren van data", "Websites maken", "Databases beheren"], 
-          correct: 1 
-        },
-        { 
-          q: "Welk type ML gebruikt gelabelde data?", 
-          opts: ["Supervised Learning", "Unsupervised Learning", "Reinforcement Learning", "Deep Learning"], 
-          correct: 0 
-        },
-        { 
-          q: "Wat is GEEN typische toepassing van ML?", 
-          opts: ["Beeldherkenning", "Tekstverwerking", "Voorspellingen", "Koffie zetten"], 
-          correct: 3 
-        }
-      ];
-      setQuiz(newQuiz);
-      setIsProcessing(false);
+    setError("");
+
+    try {
+      const result = await apiCall('/generate-quiz', {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      });
+
+      setQuiz(result.quiz);
       setActiveTab("quiz");
-    }, 1500);
+    } catch (error) {
+      setError(`Quiz generatie gefaald: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  const generateSummary = () => {
+  const generateSummary = async () => {
+    if (!text.trim()) {
+      setError("Voeg eerst tekst toe om een samenvatting te genereren.");
+      return;
+    }
+
     setIsProcessing(true);
-    setTimeout(() => {
-      const newSummary = `
-**Samenvatting: Machine Learning Basis**
+    setError("");
 
-Machine Learning (ML) is een kernonderdeel van kunstmatige intelligentie waarbij computers leren van data zonder expliciete programmering.
+    try {
+      const result = await apiCall('/generate-summary', {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      });
 
-**Drie hoofdtypes:**
-1. **Supervised Learning** - Gebruikt gelabelde data voor training
-2. **Unsupervised Learning** - Vindt patronen in ongelabelde data  
-3. **Reinforcement Learning** - Leert door trial-and-error met beloningen
-
-**Belangrijkste toepassingen:**
-- Beeldherkenning en computervision
-- Natuurlijke taalverwerking (NLP)
-- Voorspellende analyses en data mining
-- Aanbevelingssystemen
-
-Deze technieken revolutioneren vele industrieën en maken intelligente systemen mogelijk die kunnen adapteren en verbeteren over tijd.
-      `;
-      setSummary(newSummary);
-      setIsProcessing(false);
+      setSummary(result.summary);
       setActiveTab("summary");
-    }, 1500);
+    } catch (error) {
+      setError(`Samenvatting generatie gefaald: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  const generateExamQuestions = () => {
+  const generateExamQuestions = async () => {
+    if (!text.trim()) {
+      setError("Voeg eerst tekst toe om examenvragen te genereren.");
+      return;
+    }
+
     setIsProcessing(true);
-    setTimeout(() => {
-      const newExamQuestions = [
-        {
-          q: "Leg uit wat Machine Learning is en beschrijf kort de drie hoofdtypes. Geef bij elk type een praktisch voorbeeld.",
-          points: 10,
-          type: "open"
-        },
-        {
-          q: "Vergelijk Supervised en Unsupervised Learning. Wanneer zou je elk type gebruiken?",
-          points: 8,
-          type: "open"
-        },
-        {
-          q: "Beschrijf drie concrete toepassingen van Machine Learning in het dagelijks leven en leg uit welk type ML waarschijnlijk gebruikt wordt.",
-          points: 12,
-          type: "open"
-        },
-        {
-          q: "Wat zijn de voordelen en mogelijke nadelen van Reinforcement Learning ten opzichte van andere ML-technieken?",
-          points: 10,
-          type: "open"
-        }
-      ];
-      setExamQuestions(newExamQuestions);
-      setIsProcessing(false);
+    setError("");
+
+    try {
+      const result = await apiCall('/generate-exam-questions', {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      });
+
+      setExamQuestions(result.examQuestions);
       setActiveTab("exam");
-    }, 1500);
+    } catch (error) {
+      setError(`Examenvragen generatie gefaald: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const TabButton = ({ id, label, count }) => (
@@ -173,19 +206,45 @@ Deze technieken revolutioneren vele industrieën en maken intelligente systemen 
       </header>
 
       {/* HERO */}
-      <section className="w-full bg-gradient-to-br from-blue-50 via-white to-purple-50">
-        <div className="mx-auto max-w-7xl px-6 py-16">
+      <section className="w-full bg-gradient-to-br from-blue-50 via-white to-purple-50 relative overflow-hidden">
+        {/* Background decoration */}
+        <div className="absolute inset-0">
+          <div className="absolute top-20 left-20 w-72 h-72 bg-blue-200 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse"></div>
+          <div className="absolute top-40 right-20 w-72 h-72 bg-purple-200 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse"></div>
+        </div>
+        
+        <div className="mx-auto max-w-7xl px-6 py-20 relative">
           <div className="text-center max-w-4xl mx-auto">
+            <div className="inline-flex items-center px-4 py-2 bg-white rounded-full shadow-sm border mb-8">
+              <span className="text-sm font-medium text-gray-700">🎓 Speciaal voor KU Leuven studenten</span>
+            </div>
+            
             <h1 className="text-5xl md:text-6xl font-black leading-tight tracking-tight mb-6">
               Transform je cursus in{" "}
               <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                 slimme studiematerialen
               </span>
             </h1>
-            <p className="text-xl text-gray-600 leading-relaxed max-w-3xl mx-auto">
+            <p className="text-xl text-gray-600 leading-relaxed max-w-3xl mx-auto mb-8">
               Upload je PDF's of plak tekst. Onze AI maakt automatisch flashcards, samenvattingen, 
               quizzes en examenvragen om je studie-ervaring te verbeteren.
             </p>
+            
+            {/* Quick stats */}
+            <div className="flex flex-wrap justify-center gap-8 mt-12">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-black">1000+</div>
+                <div className="text-sm text-gray-600">Flashcards gegenereerd</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-black">50+</div>
+                <div className="text-sm text-gray-600">Vakken ondersteund</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-black">95%</div>
+                <div className="text-sm text-gray-600">Studenten tevreden</div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -200,6 +259,13 @@ Deze technieken revolutioneren vele industrieën en maken intelligente systemen 
             </div>
             
             <div className="p-8">
+              {/* Error Display */}
+              {error && (
+                <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
+                  <div className="text-red-800 font-medium">❌ {error}</div>
+                </div>
+              )}
+
               {/* File Upload */}
               <div className="mb-8">
                 <input
@@ -212,7 +278,7 @@ Deze technieken revolutioneren vele industrieën en maken intelligente systemen 
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isProcessing}
-                  className="w-full h-24 border-2 border-dashed border-gray-300 rounded-2xl hover:border-black transition-colors flex flex-col items-center justify-center gap-2 disabled:opacity-50"
+                  className="w-full h-24 border-2 border-dashed border-gray-300 rounded-2xl hover:border-black transition-colors flex flex-col items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <div className="text-2xl">📁</div>
                   <span className="font-medium text-gray-700">
@@ -320,21 +386,7 @@ Deze technieken revolutioneren vele industrieën en maken intelligente systemen 
             {activeTab === "summary" && summary && (
               <div className="bg-white rounded-2xl p-8 shadow-lg border">
                 <div className="prose max-w-none">
-                  {summary.split('\n').map((line, i) => (
-                    <div key={i} className="mb-3">
-                      {line.startsWith('**') && line.endsWith('**') ? (
-                        <h3 className="font-bold text-xl text-black">{line.slice(2, -2)}</h3>
-                      ) : line.startsWith('**') ? (
-                        <h4 className="font-semibold text-lg text-black mt-4">{line.slice(2)}</h4>
-                      ) : line.startsWith('- ') ? (
-                        <li className="text-gray-700 ml-4">{line.slice(2)}</li>
-                      ) : line.match(/^\d+\./) ? (
-                        <div className="text-gray-700 font-medium">{line}</div>
-                      ) : line.trim() ? (
-                        <p className="text-gray-700 leading-relaxed">{line}</p>
-                      ) : null}
-                    </div>
-                  ))}
+                  <pre className="whitespace-pre-wrap font-sans text-gray-700 leading-relaxed">{summary}</pre>
                 </div>
               </div>
             )}
